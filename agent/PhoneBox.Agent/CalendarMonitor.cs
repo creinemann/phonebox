@@ -10,16 +10,25 @@ public sealed record CalendarSnapshot(IReadOnlyList<CalendarEvent> Events, long 
 /// <summary>
 /// Upcoming events from iCalendar (ICS) feeds — Google's "secret address in iCal format", Outlook's published
 /// calendar link, iCloud public calendars, any CalDAV server's export. Fetched every 10 minutes; the URLs stay on
-/// this computer (they are secrets), the phone only gets the events of the next two weeks.
+/// this computer (they are secrets), the phone only gets the events of the next two weeks, and of the stretch of days
+/// it asks for when the Calendar widget shows another month (<see cref="Range"/>, read from the feeds kept here).
 /// Recurring events are expanded for the usual rules (daily / weekly / monthly / yearly, INTERVAL, COUNT, UNTIL,
 /// BYDAY, EXDATE, moved occurrences via RECURRENCE-ID).
 /// </summary>
 public sealed class CalendarMonitor(ConfigStore config, ILogger<CalendarMonitor> log) : BackgroundService
 {
     private const int DaysAhead = 14;
+    /// <summary>The most days one <see cref="Range"/> call reads: a month grid is six weeks.</summary>
+    public const int MaxRangeDays = 62;
+    /// <summary>How far from today <see cref="Range"/> reads, in years either way.</summary>
+    private const int RangeYears = 5;
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
     private volatile CalendarSnapshot _snap = new([], 0, []);
     private string _sourcesKey = "";
+    private sealed record Feed(string Name, string Color, string Text);
+    // the feeds as last read, for Range; replaced whole, never changed in place
+    private volatile IReadOnlyList<Feed> _feeds = [];
+    private readonly Dictionary<string, string> _lastText = [];
 
     public CalendarSnapshot Snapshot() => _snap;
 
@@ -62,6 +71,7 @@ public sealed class CalendarMonitor(ConfigStore config, ILogger<CalendarMonitor>
                 var text = await Http.GetStringAsync(url, ct);
                 var fresh = Ics.Parse(text, from, to).Select(e => e with { Calendar = name, Color = src.Color ?? "#60a5fa" }).ToList();
                 _lastGood[src.Url] = fresh;
+                _lastText[src.Url] = text;
                 events.AddRange(fresh);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -72,9 +82,42 @@ public sealed class CalendarMonitor(ConfigStore config, ILogger<CalendarMonitor>
             }
         }
         foreach (var gone in _lastGood.Keys.Except(sources.Select(s => s.Url)).ToList()) _lastGood.Remove(gone);
+        foreach (var gone in _lastText.Keys.Except(sources.Select(s => s.Url)).ToList()) _lastText.Remove(gone);
+        _feeds = sources.Where(s => _lastText.ContainsKey(s.Url))
+            .Select(s => new Feed(string.IsNullOrWhiteSpace(s.Name) ? "Calendar" : s.Name, s.Color ?? "#60a5fa", _lastText[s.Url])).ToList();
         _snap = new(events.OrderBy(e => e.Start).ThenBy(e => e.Title).ToList(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), errors);
         if (sources.Count > 0) log.LogInformation("calendars: {Count} events{Errors}", events.Count, errors.Count > 0 ? "; " + string.Join("; ", errors) : "");
     }
+
+    /// <summary>
+    /// The events between two times (Unix ms), read from the feeds as last fetched: the Calendar widget asks for the
+    /// six weeks of the month it shows. At most <see cref="MaxRangeDays"/> days, within <see cref="RangeYears"/> years
+    /// of today. A day is added on either side, as all-day events are dated in UTC; the phone keeps those of its days.
+    /// </summary>
+    public IReadOnlyList<CalendarEvent> Range(long fromMs, long toMs) => Range(_feeds, fromMs, toMs, DateTime.UtcNow);
+
+    private static IReadOnlyList<CalendarEvent> Range(IReadOnlyList<Feed> feeds, long fromMs, long toMs, DateTime now)
+    {
+        if (toMs <= fromMs) return [];
+        var span = TimeSpan.FromDays(RangeYears * 366);
+        long Ms(DateTime d) => new DateTimeOffset(d, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        fromMs = Math.Max(fromMs, Ms(now - span));
+        toMs = Math.Min(Math.Min(toMs, Ms(now + span)), fromMs + (long)TimeSpan.FromDays(MaxRangeDays).TotalMilliseconds);
+        if (toMs <= fromMs) return [];
+        var from = DateTimeOffset.FromUnixTimeMilliseconds(fromMs).UtcDateTime.AddDays(-1);
+        var to = DateTimeOffset.FromUnixTimeMilliseconds(toMs).UtcDateTime.AddDays(1);
+        var events = new List<CalendarEvent>();
+        foreach (var f in feeds)
+        {
+            try { events.AddRange(Ics.Parse(f.Text, from, to).Select(e => e with { Calendar = f.Name, Color = f.Color })); }
+            catch (Exception) { } // a feed that can't be read for these days leaves the others
+        }
+        return events.OrderBy(e => e.Start).ThenBy(e => e.Title).ToList();
+    }
+
+    /// <summary>For tests: <see cref="Range"/> over a feed's text.</summary>
+    internal static IReadOnlyList<CalendarEvent> RangeOf(string ics, long fromMs, long toMs, DateTime now) =>
+        Range([new Feed("Test", "#60a5fa", ics)], fromMs, toMs, now);
 
     /// <summary>The event happening now (not all-day), if any, optionally only those whose title contains one of the names.</summary>
     public CalendarEvent? Current(string[] names)

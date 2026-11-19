@@ -815,34 +815,126 @@ W.worldclock = {
   },
 };
 
+// A month: today highlighted, dots on the days with events from the calendars set up in the agent (Settings ›
+// General). Tap a day for its events; ‹ › show other months, the month's name goes back to today. The agent sends the
+// next two weeks with the panel's calendar data; for the six weeks of another month the widget asks it for those days
+// (/api/calendar/range), and an older agent without that leaves the dots of the two weeks it sends.
 W.calendar = {
-  needs: ['tick'],
-  create(box) {
+  needs: ['tick', 'calendar'],
+  create(box, { o }) {
+    const only = String(o.calendars || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const withEvents = o.events !== false;
+    const today0 = new Date();
+    let view = { y: today0.getFullYear(), m: today0.getMonth() }; // the month shown
+    let picked = null;   // local midnight (ms) of the day whose events are open
     let shown = '';
-    return {
-      update() {
-        const now = new Date();
-        const key = now.toDateString();
-        if (key === shown) return;
-        shown = key;
-        const y = now.getFullYear(), m = now.getMonth();
-        const first = new Date(y, m, 1), days = new Date(y, m + 1, 0).getDate();
-        const lead = (first.getDay() + 6) % 7; // Monday first
-        const cells = ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => h('span', 'cal-h' + (i > 4 ? ' we' : ''), d));
-        const prevDays = new Date(y, m, 0).getDate();
-        for (let i = 0; i < lead; i++) cells.push(h('span', 'cal-d out', prevDays - lead + 1 + i));
-        for (let d = 1; d <= days; d++) {
-          const wd = (lead + d - 1) % 7;
-          cells.push(h('span', 'cal-d' + (d === now.getDate() ? ' today' : '') + (wd > 4 ? ' we' : ''), d));
-        }
-        const total = Math.ceil(cells.length / 7) * 7;
-        for (let d = 1; cells.length < total; d++) cells.push(h('span', 'cal-d out', d));
-        const grid = h('div', 'cal', cells);
-        grid.style.gridTemplateRows = `auto repeat(${total / 7 - 1}, 1fr)`;
-        box.replaceChildren(h('div', 'w-title', now.toLocaleDateString(LOCALE, { month: 'long', year: 'numeric' }),
-          h('span', 'w-sub', 'Week ' + isoWeek(now))), grid);
-      },
+    const months = new Map(); // 'y-m' -> { at, events } read from the agent
+    let rangeMissing = false; // the agent has no /calendar/range (older version)
+    // all-day events are dated at UTC midnight: show them on that date here (main.js loadCalendar does the same)
+    const localDay = (ms) => { const d = new Date(ms); return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getTime(); };
+    const grid = (y, m) => {
+      const lead = (new Date(y, m, 1).getDay() + 6) % 7; // Monday first
+      const days = new Date(y, m + 1, 0).getDate();
+      return { lead, days, weeks: Math.ceil((lead + days) / 7), from: new Date(y, m, 1 - lead).getTime(), to: new Date(y, m, 1 - lead + Math.ceil((lead + days) / 7) * 7).getTime() };
     };
+    const keep = (e) => !only.length || only.includes(String(e.calendar || '').toLowerCase());
+    const hasCalendars = () => !!(D.calendar && (D.calendar.updated || (D.calendar.events || []).length));
+    async function fetchMonth(y, m) {
+      const k = `${y}-${m}`;
+      const have = months.get(k);
+      if (rangeMissing || (have && (have.loading || Date.now() - have.at < 10 * 60_000))) return;
+      months.set(k, { ...(have || { events: null }), loading: true, at: have?.at || 0 });
+      const g = grid(y, m);
+      try {
+        const r = await api(`/calendar/range?from=${g.from}&to=${g.to}`, 'GET', 8000);
+        const events = (r.events || []).map((e) => (e.allDay ? { ...e, start: localDay(e.start), end: localDay(e.end) } : e));
+        months.set(k, { at: Date.now(), events });
+      } catch (err) {
+        if (err && (err.status === 404 || err.status === 405)) rangeMissing = true;
+        months.set(k, { at: Date.now() - 9 * 60_000, events: have?.events || null }); // try again in a minute
+      }
+      shown = '';
+      render();
+    }
+    // the events of the month shown: read for it, or (until then, or from an older agent) the panel's two weeks
+    const monthEvents = () => (months.get(`${view.y}-${view.m}`)?.events || D.calendar?.events || []).filter(keep);
+    const eventsOn = (list, dayMs) => {
+      const d = new Date(dayMs), end = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+      return list.filter((e) => e.start < end && (e.end > dayMs || e.start >= dayMs)).sort((a, b) => (b.allDay - a.allDay) || a.start - b.start);
+    };
+    const go = (dm) => { const d = new Date(view.y, view.m + dm, 1); view = { y: d.getFullYear(), m: d.getMonth() }; picked = null; render(); };
+    const goToday = () => { const n = new Date(); view = { y: n.getFullYear(), m: n.getMonth() }; picked = null; render(); };
+
+    function dayList(list, dayMs) {
+      const d = new Date(dayMs);
+      const evs = eventsOn(list, dayMs);
+      const close = h('button', 'cal-x', '×');
+      close.setAttribute('aria-label', 'Close');
+      close.onclick = (e) => { e.stopPropagation(); picked = null; render(); };
+      const rows = evs.map((e) => {
+        const row = h('div', 'ag-row',
+          h('span', 'ag-dot'),
+          h('span', 'ag-time', e.allDay ? 'all day' : fmtHM(new Date(e.start))),
+          h('span', 'ag-title', e.title, e.location ? h('small', null, ' · ' + e.location) : null),
+          h('span', 'ag-time', e.allDay || e.start < dayMs ? '' : '–' + fmtHM(new Date(e.end))));
+        row.style.setProperty('--c', e.color || '#60a5fa');
+        return row;
+      });
+      const pop = h('div', 'cal-pop',
+        h('div', 'cal-pop-h', d.toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'long', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }), close),
+        h('div', 'cal-pop-list', rows.length ? rows : h('div', 'empty', hasCalendars() ? 'No events' : 'Add a calendar in Settings › General')));
+      pop.onclick = (e) => e.stopPropagation();
+      return pop;
+    }
+
+    function render() {
+      const now = new Date();
+      const { y, m } = view;
+      const g = grid(y, m);
+      const list = withEvents ? monthEvents() : [];
+      const key = JSON.stringify([now.toDateString(), y, m, picked, list.length, list.map((e) => e.start + e.title).join('|').length, months.get(`${y}-${m}`)?.at]);
+      if (key === shown) return;
+      shown = key;
+      if (withEvents && hasCalendars()) fetchMonth(y, m);
+      const cells = ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => h('span', 'cal-h' + (i > 4 ? ' we' : ''), d));
+      for (let i = 0; i < g.weeks * 7; i++) {
+        const day = new Date(y, m, 1 - g.lead + i);
+        const ms = day.getTime();
+        const out = day.getMonth() !== m;
+        const isToday = day.toDateString() === now.toDateString();
+        const evs = withEvents ? eventsOn(list, ms) : [];
+        const dots = [...new Set(evs.map((e) => e.color || '#60a5fa'))].slice(0, 3).map((c) => { const s = h('i'); s.style.background = c; return s; });
+        const cell = h('span', 'cal-d' + (out ? ' out' : '') + (isToday ? ' today' : '') + (i % 7 > 4 ? ' we' : '') + (picked === ms ? ' picked' : ''),
+          h('b', null, String(day.getDate())), dots.length ? h('span', 'cal-dots', dots) : null);
+        cell.dataset.day = String(ms);
+        cells.push(cell);
+      }
+      const cal = h('div', 'cal', cells);
+      cal.style.gridTemplateRows = `auto repeat(${g.weeks}, 1fr)`;
+      cal.onclick = (e) => {
+        const c = e.target.closest('.cal-d');
+        if (!c) return;
+        const ms = +c.dataset.day, d = new Date(ms);
+        haptic();
+        if (d.getMonth() !== view.m) view = { y: d.getFullYear(), m: d.getMonth() };
+        picked = picked === ms ? null : ms;
+        render();
+      };
+      const prev = h('button', 'cal-nav', '‹'), next = h('button', 'cal-nav', '›');
+      prev.setAttribute('aria-label', 'Previous month');
+      next.setAttribute('aria-label', 'Next month');
+      prev.onclick = (e) => { e.stopPropagation(); haptic(); go(-1); };
+      next.onclick = (e) => { e.stopPropagation(); haptic(); go(1); };
+      const isNow = y === now.getFullYear() && m === now.getMonth();
+      const label = h('button', 'cal-month', new Date(y, m, 1).toLocaleDateString(LOCALE, { month: 'long', year: 'numeric' }));
+      label.onclick = (e) => { e.stopPropagation(); haptic(); goToday(); };
+      const head = h('div', 'w-title cal-head', prev, label, next,
+        h('span', 'w-sub', isNow ? 'Week ' + isoWeek(now) : '↩ ' + t('time.today')));
+      head.lastChild.onclick = isNow ? null : (e) => { e.stopPropagation(); goToday(); };
+      // the day's events cover the month only, so the arrows and the month's name stay in reach
+      box.replaceChildren(head, h('div', 'cal-body', [cal, picked != null ? dayList(list, picked) : null].filter(Boolean)));
+    }
+    return { update: render };
   },
 };
 

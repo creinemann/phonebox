@@ -3,6 +3,10 @@
 ## Unreleased
 
 **Panel**
+- **Calendar** widget: dots on days with events, tap a day for its events, and ‹ › to browse months ahead or back.
+  The agent reads the six weeks shown from the calendars it already fetches (`/api/calendar/range`, at most 62 days
+  at a time, within five years of today); with an older agent the widget shows the two weeks it already gets. New
+  options: show events (on by default) and only these calendars.
 - New **Web page** widget: shows a web page in a frame, with zoom and an optional reload. A page on the computer
   (`http://127.0.0.1:…`) or the local network is fetched by the agent and shown over USB and Wi-Fi alike, under an
   origin of its own, so its scripts and data requests work and it can't reach the panel. The agent fetches only the

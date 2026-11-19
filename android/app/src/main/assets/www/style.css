@@ -582,9 +582,29 @@ body.offline .offline-msg { display: flex; }
 
 /* ---------- calendar ---------- */
 .w-calendar { padding: 9px 10px; display: flex; flex-direction: column; gap: 4px; }
+.cal-body { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
 .cal { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-size: clamp(10px, 6cqh, 15px); }
 .cal-h { font-size: .78em; color: var(--muted); font-weight: 600; }
-.cal-d { display: grid; place-items: center; border-radius: 8px; }
+.cal-d { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: 8px; min-height: 0; cursor: pointer; }
+.cal-d b { font-weight: inherit; line-height: 1.1; }
+.cal-d.picked { box-shadow: inset 0 0 0 2px rgb(var(--ambient)); }
+.cal-dots { display: flex; gap: 2px; height: 5px; }
+.cal-dots i { width: 5px; height: 5px; border-radius: 50%; }
+.cal-d.today .cal-dots i { outline: 1.5px solid #06080b; }
+/* the month and its arrows: ‹ › move a month, the name goes back to today */
+.cal-head { display: flex; align-items: center; gap: 2px; }
+.cal-head .w-sub { margin-left: auto; cursor: pointer; }
+.cal-nav, .cal-month { border: 0; background: none; color: inherit; font: inherit; padding: 0 6px; border-radius: 6px; cursor: pointer; }
+.cal-nav { font-size: 1.35em; line-height: 1; color: var(--muted); }
+.cal-nav:active, .cal-month:active { background: rgba(255, 255, 255, .08); }
+.cal-month { padding: 0 2px; font-weight: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a tapped day's events, over the month */
+.cal-pop { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; gap: 4px; padding: 8px 8px 6px;
+  background: linear-gradient(var(--card-hi), var(--card-hi)), var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .45); }
+.cal-pop-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 14px; }
+.cal-x { border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; padding: 0 4px; cursor: pointer; }
+.cal-pop-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.cal-pop-list > * { flex-shrink: 0; }
 .cal-d.out { color: var(--dim); opacity: .5; }
 .cal .we { color: #fca5a5; }
 .cal-d.today { background: rgb(var(--ambient)); color: #06080b; font-weight: 700; }
