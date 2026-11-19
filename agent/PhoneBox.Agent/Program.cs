@@ -469,6 +469,9 @@ object State(IServiceProvider sp, long? ev)
 
 // Upcoming calendar events (Agenda widget); the feed URLs stay here.
 app.MapGet("/api/calendar", (CalendarMonitor cal) => Results.Json(cal.Snapshot()));
+// the events of the days the Calendar widget shows (another month, or more than the two weeks above)
+app.MapGet("/api/calendar/range", (long? from, long? to, CalendarMonitor cal) =>
+    from is { } f && to is { } t ? Results.Json(new { events = cal.Range(f, t) }) : Results.BadRequest());
 
 // Headlines for the Feeds widget; the feed and article addresses stay here, the phone opens an article by its id.
 app.MapGet("/api/feeds", (FeedMonitor feeds) =>

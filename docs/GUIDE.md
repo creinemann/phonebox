@@ -73,7 +73,7 @@ keeps the screen on.
 
 | Category | Widgets |
 |---|---|
-| **Time** | Clock (with status line and weather) · Analog clock (any time zone) · **Word clock** · World clocks · Calendar · **Next up** · Time progress (day / week / month / year) · Countdown · Pomodoro · Quick timer · Stopwatch |
+| **Time** | Clock (with status line and weather) · Analog clock (any time zone) · **Word clock** · World clocks · **Calendar** (tap a day for its events, ‹ › for other months) · **Next up** · Time progress (day / week / month / year) · Countdown · Pomodoro · Quick timer · Stopwatch |
 | **Weather & sky** | Weather · Forecast (hourly / 7 days) · Sun & moon (daylight left, UV, moon phase) · **Moon** · Air quality (European AQI, PM2.5, PM10, O₃, NO₂) |
 | **Computer** | **Rules** (which hold, pause) · **Battery care** · On air (microphone / camera / OBS) · OBS Studio (live, recording, scenes) · **Dictation** (speak on the phone, typed on the PC; the app asks for the microphone on first use) · **App console** (Windows: keys and a dial for the app in front, set per app in Settings › General; use the focused app's process name from Task Manager's Details tab; packaged Store apps can all show up as `ApplicationFrameHost` and terminal tabs as `WindowsTerminal`, so a profile for those names covers all of them) · Device batteries (headphones, mice, keyboards) · Docker / Podman (containers, start / stop) · Metric tile · Gauge · Chart · GPU details · Memory & disks · Top processes · Processes · Now playing · Radio · Volume · **Spectrum bars** (Windows: a live spectrum of what the PC is playing, like the classic LED bar visualizers) · Shortcut grid · Big button (optionally filled with the shortcut's uploaded picture) · **Command** (PowerShell / bash / zsh output, refreshed every N seconds) |
 | **AI & code** | AI quotas · Quota ring · AI sessions · GitHub |
@@ -93,6 +93,11 @@ Gyan.FFmpeg` on Windows, `brew install ffmpeg` on macOS, your distribution's `ff
 PhoneBox afterwards so it finds ffmpeg in PATH, or enter ffmpeg's full path in the same card. A camera runs only while
 a Camera widget for it is on the phone's screen, at 5 frames a second by default; pick 1 to 10 next to the camera (smoother costs more CPU on the PC and more data to the phone), and expect a short delay. Choose
 **UDP** for a camera that doesn't stream over TCP. At most 4 cameras play at the same time.
+
+**Calendar** shows a month with dots on the days that have events from your calendars (set up in Settings ›
+General). Tap a day to see its events; tap it again or × to close. ‹ and › move a month at a time, as far ahead as you
+like, and the month's name (or **Today**) goes back to this month. **Only these calendars** limits the dots and events
+to the calendars you name; turn off **Show events from my calendars** for a plain month.
 
 **Smart Stack** combines up to 12 widgets in one slot. Add it from the Layout category, then drag widgets into it or
 use its picker. Reorder cards, open their settings, or disable individual cards. Tap the dots or swipe vertically to
