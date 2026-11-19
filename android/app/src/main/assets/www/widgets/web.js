@@ -1,4 +1,4 @@
-import { $, API, PANEL_HEADERS, ago, api, h, haptic, safeFetch, store, t, tick, toast } from '../main.js';
+import { $, API, PANEL_HEADERS, ago, api, bridge, h, haptic, safeFetch, store, t, tick, toast } from '../main.js';
 import { W } from '../registry.js';
 import { cached, every, fmtNum, lines, pctSpan, sparkLine } from './helpers.js';
 
@@ -175,6 +175,66 @@ W.image = {
     img.onload = () => box.classList.remove('err');
     const mins = Number(o.minutes) || 0;
     const load = every(mins > 0 ? mins * 60_000 : 1e12, () => { img.src = mins > 0 ? url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now() : url; });
+    return { update: load };
+  },
+};
+
+// ---------------------------------------------------------------- web page
+// A page in a frame. In the app, a page on the computer or the local network (http://, 127.0.0.1, 192.168.…) can't load
+// directly: the app allows plain http only to the phone itself and shows the panel as a secure page. So the app has
+// the agent fetch it (WebPageProxy.cs) and shows it under an address of its own,
+// https://<hex of "pageId/widgetId">.pcweb.androidplatform.net/<path> (MainActivity.webPage). That origin is not the
+// panel's, so the page runs with its own origin (scripts, storage, requests to its own server, which come back through
+// the agent) and still can't reach the panel or the bridge. "127.0.0.1" in the address is the computer, not the phone.
+export const WEB_HOST = 'pcweb.androidplatform.net'; // MainActivity.WEB_HOST
+
+/** True for an address the phone itself usually can't, or mustn't, load: this computer, the local network, a single name. */
+export function localHost(host) {
+  const hn = String(host || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (!hn) return false;
+  if (hn === 'localhost' || hn.endsWith('.localhost') || hn.endsWith('.local') || hn.endsWith('.lan') || hn.endsWith('.home.arpa')) return true;
+  if (hn === '::1' || /^f[cd][0-9a-f]{2}:/.test(hn) || /^fe[89ab][0-9a-f]:/.test(hn)) return true;
+  const ip = hn.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (ip) {
+    const [a, b] = [+ip[1], +ip[2]];
+    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)
+      || (a === 100 && b >= 64 && b <= 127); // Tailscale
+  }
+  return !hn.includes('.') && !hn.includes(':'); // a computer's own name on the network
+}
+
+/** The frame's address for a widget: the page itself, or (in the app) the page fetched through the computer. */
+export function webPageSrc(url, key, via = 'auto', inApp = !!bridge) {
+  let u;
+  try { u = new URL(String(url || '').trim()); } catch (_) { return null; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  const viaPc = inApp && (via === 'pc' || (via !== 'direct' && (u.protocol === 'http:' || localHost(u.hostname))));
+  if (!viaPc) return u.href;
+  const hex = [...new TextEncoder().encode(key)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `https://${hex.match(/.{1,60}/g).join('.')}.${WEB_HOST}${u.pathname}${u.search}${u.hash}`;
+}
+
+W.webpage = {
+  needs: ['tick'],
+  create(box, { o, page, w }) {
+    const src = webPageSrc(o.url, `${page.id}/${w.id}`, o.via);
+    if (!src) { box.replaceChildren(h('div', 'empty', t('w.setWebUrl'))); return {}; }
+    const zoom = Math.max(25, Math.min(300, Number(o.zoom) || 100)) / 100;
+    const frame = h('iframe', 'web-frame');
+    // allow-same-origin gives the page its own origin (never the panel's: it is another host), so its scripts can use
+    // storage and talk to their own server
+    frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
+    frame.setAttribute('referrerpolicy', 'no-referrer');
+    if (zoom !== 1) {
+      frame.style.width = frame.style.height = `${100 / zoom}%`;
+      frame.style.transform = `scale(${zoom})`;
+    }
+    // by default the page only shows: taps and swipes stay with the panel, so swiping still changes pages
+    if (!o.interactive) frame.classList.add('web-still');
+    box.append(frame);
+    const mins = Number(o.minutes) || 0;
+    // setting src again reloads the page, also when the address is the same
+    const load = every(mins > 0 ? mins * 60_000 : 1e12, () => { frame.src = src; });
     return { update: load };
   },
 };

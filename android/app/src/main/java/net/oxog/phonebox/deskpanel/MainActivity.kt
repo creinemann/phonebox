@@ -104,6 +104,7 @@ class MainActivity : Activity(), SensorEventListener {
                 val url = request.url
                 if (url.host == ASSET_HOST && url.path?.startsWith("/agent/") == true)
                     return if (fromPanel(request)) proxy(request) else FORBIDDEN()
+                if (url.scheme == "https" && url.host?.lowercase()?.endsWith(".$WEB_HOST") == true) return webPage(request)
                 val r = assetLoader.shouldInterceptRequest(url)
                 // the panel is made of ES modules, which need a JavaScript MIME type
                 if (r != null && url.path?.endsWith(".js") == true) r.mimeType = "text/javascript"
@@ -181,7 +182,25 @@ class MainActivity : Activity(), SensorEventListener {
     private fun proxy(req: WebResourceRequest): WebResourceResponse {
         val path = req.url.encodedPath!!.removePrefix("/agent")
         val query = req.url.encodedQuery?.let { "?$it" } ?: ""
-        val r = link.request(req.method, path + query)
+        return response(link.request(req.method, path + query))
+    }
+
+    /**
+     * A Web page widget's page (widgets/web.js), which the agent fetches for the phone (WebPageProxy.cs):
+     * https://<hex of "pageId/widgetId">.pcweb.androidplatform.net/<path>. Any frame may load it, it is never the
+     * panel's origin, and only GET reaches the agent, which fetches only that widget's own page origin.
+     */
+    private fun webPage(req: WebResourceRequest): WebResourceResponse {
+        if (req.method != "GET" && req.method != "HEAD")
+            return WebResourceResponse("text/plain", "utf-8", 405, "Method Not Allowed", NO_STORE, java.io.ByteArrayInputStream(ByteArray(0)))
+        val key = req.url.host!!.lowercase().removeSuffix(".$WEB_HOST").replace(".", "")
+        if (key.isEmpty() || key.length > 512 || !key.all { it in '0'..'9' || it in 'a'..'f' }) return FORBIDDEN()
+        val path = req.url.encodedPath?.takeIf { it.startsWith("/") } ?: "/"
+        val query = req.url.encodedQuery?.let { "?$it" } ?: ""
+        return response(link.request("GET", "/api/web/$key$path$query"))
+    }
+
+    private fun response(r: AgentLink.Reply): WebResourceResponse {
         val ct = r.contentType ?: "application/octet-stream"
         val mime = ct.substringBefore(';').trim()
         val charset = if (ct.contains("charset=")) ct.substringAfter("charset=").trim() else null
@@ -473,6 +492,8 @@ class MainActivity : Activity(), SensorEventListener {
 
     companion object {
         private const val ASSET_HOST = "appassets.androidplatform.net"
+        /** Web page widgets' pages fetched through the agent, one origin per widget (widgets/web.js WEB_HOST). */
+        private const val WEB_HOST = "pcweb.androidplatform.net"
         private val NO_STORE = mapOf("Cache-Control" to "no-store")
         private const val PANEL_HEADER = "X-PhoneBox-Panel"
         private val READ_ONLY_IMAGES = setOf("/agent/api/art", "/agent/api/procs/icon", "/agent/api/controls/radio-logo", "/agent/api/apps/icon", "/agent/api/discord/img", "/agent/api/shortcuts/icon")

@@ -78,6 +78,7 @@ AddMonitor<SessionMonitor>(builder.Services);
 AddMonitor<FeedMonitor>(builder.Services);
 builder.Services.AddSingleton<PhotoFrame>();
 builder.Services.AddSingleton<CameraFeeds>();
+builder.Services.AddSingleton<WebPageProxy>();
 AddMonitor<GitHubMonitor>(builder.Services);
 AddMonitor<PingMonitor>(builder.Services);
 AddMonitor<AdbReverse>(builder.Services);
@@ -500,6 +501,8 @@ app.MapGet("/api/camera", (string? widget, string? fresh, HttpRequest req, HttpR
     if (status == 204) return Results.NoContent(); // no newer picture than the one this widget has
     return jpeg is null ? Results.Json(new { state }, statusCode: status) : Results.Bytes(jpeg, "image/jpeg");
 });
+// Web page widget: the page a widget shows, fetched here for the phone (only on that page's own origin, GET only).
+app.MapGet(WebPageProxy.RoutePrefix + "{key}/{**rest}", (string key, HttpContext ctx, WebPageProxy web, CancellationToken ct) => web.Serve(ctx, key, ct));
 app.MapPost("/api/feeds/open", (string? id, FeedMonitor feeds) =>
     feeds.Open(id) is { } error ? Results.BadRequest(new { error }) : Results.Ok(new { ok = true }));
 

@@ -3,6 +3,10 @@
 ## Unreleased
 
 **Panel**
+- New **Web page** widget: shows a web page in a frame, with zoom and an optional reload. A page on the computer
+  (`http://127.0.0.1:…`) or the local network is fetched by the agent and shown over USB and Wi-Fi alike, under an
+  origin of its own, so its scripts and data requests work and it can't reach the panel. The agent fetches only the
+  origin of the address a saved widget names, with GET only.
 - Clock widget: a new option chooses which AI quota providers its status line shows; clocks saved before it show
   all of them, as before (#225, #228, [Seyamalam](https://github.com/Seyamalam)).
 
