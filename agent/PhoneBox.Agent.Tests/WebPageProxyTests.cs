@@ -16,8 +16,9 @@ public sealed class WebPageProxyTests : IDisposable
 
     private WebPageProxy Make(string url = "http://127.0.0.1:8014/Current-Weather", bool enabled = true)
     {
+        // a second, enabled page: a config whose pages are all off would get one turned back on
         File.WriteAllText(_path, $$"""
-            { "pages": [ { "id": "p", "title": "P", "enabled": {{(enabled ? "true" : "false")}}, "widgets": [
+            { "pages": [ { "id": "other", "title": "Other", "widgets": [] }, { "id": "p", "title": "P", "enabled": {{(enabled ? "true" : "false")}}, "widgets": [
                 { "id": "web", "type": "webpage", "x": 0, "y": 0, "w": 6, "h": 4, "options": { "url": "{{url}}" } },
                 { "id": "img", "type": "image", "x": 6, "y": 0, "w": 6, "h": 4, "options": { "url": "{{url}}" } } ] } ] }
             """);
