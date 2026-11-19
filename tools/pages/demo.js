@@ -551,6 +551,17 @@
     }
     if (path === '/api/quotas') return json(quotas());
     if (path === '/api/calendar') return json(calendar());
+    // the Calendar widget's other months: the made-up events, plus a few on fixed days of every month
+    if (path === '/api/calendar/range') {
+      const from = +q.get('from'), to = +q.get('to'), H = 3600e3;
+      const extra = [];
+      for (let d = new Date(from); d.getTime() < to; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+        const at = (day, h) => new Date(d.getFullYear(), d.getMonth(), day).getTime() + h * H;
+        extra.push({ title: 'Book club', start: at(9, 19), end: at(9, 21), allDay: false, location: 'Library', calendar: 'Personal', color: '#34d399' },
+          { title: 'Team offsite', start: at(21, 9), end: at(21, 16), allDay: false, location: null, calendar: 'Work', color: '#60a5fa' });
+      }
+      return json({ events: [...calendar().events, ...extra].filter((e) => e.end > from && e.start < to).sort((a, b) => a.start - b.start) });
+    }
     if (path === '/api/docker') return json({ ...docker(), control: allows(await config(), (t) => t === 'docker') });
     if (path === '/api/obs') { const c = await config(); return json({ ...obsState(), enabled: c.obs?.enabled !== false, control: widgets(c).some((w) => w.type === 'obs' && w.options?.control === true) }); }
     if (path === '/api/discord') {

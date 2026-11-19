@@ -3,6 +3,10 @@
 ## Unreleased
 
 **Panel**
+- **Calendar** widget: dots on days with events, tap a day for its events, and ‹ › to browse months ahead or back.
+  The agent reads the six weeks shown from the calendars it already fetches (`/api/calendar/range`, at most 62 days
+  at a time, within five years of today); with an older agent the widget shows the two weeks it already gets. New
+  options: show events (on by default) and only these calendars.
 - Clock widget: a new option chooses which AI quota providers its status line shows; clocks saved before it show
   all of them, as before (#225, #228, [Seyamalam](https://github.com/Seyamalam)).
 
